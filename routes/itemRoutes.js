@@ -1,57 +1,58 @@
 const express = require("express");
-const router = express.Router();
+const router = express.Router(); // IMPORTANT!
 const Item = require("../models/Item");
+const upload = require("../middleware/upload"); // multer or cloudinary middleware
 
-const multer = require("multer");
-const sharp = require("sharp");
-const path = require("path");
-const fs = require("fs");
-
-// Upload folder
-const upload = multer({
-  dest: "uploads/"
-});
-
-// GET items
-router.get("/", async (req, res) => {
+// CREATE item
+router.post("/", upload.single("image"), async (req, res) => {
   try {
-    const items = await Item.find().sort({ createdAt: -1 });
-    res.json({ items });
+    const newItem = new Item({
+      title: req.body.title,
+      description: req.body.description,
+      image: req.file ? req.file.path : null, // or Cloudinary URL
+    });
+
+    await newItem.save();
+    res.json({ success: true, item: newItem });
   } catch (err) {
-    res.status(500).json({ message: err.message });
+    res.status(500).json({ error: err.message });
   }
 });
 
-// POST item with image
-router.post("/", upload.single("image"), async (req, res) => {
+// GET all items
+router.get("/", async (req, res) => {
   try {
-    let imagePath = null;
-
-    if (req.file) {
-      const outputPath = `uploads/${Date.now()}-${req.file.originalname}`;
-
-      await sharp(req.file.path)
-        .resize({ width: 300 }) // compress width to 300px
-        .jpeg({ quality: 60 }) // compress jpg size
-        .toFile(outputPath);
-
-      // Delete original
-      fs.unlinkSync(req.file.path);
-
-      imagePath = `/${outputPath}`;
-    }
-
-    const item = new Item({
-      title: req.body.title,
-      description: req.body.description,
-      image: imagePath
-    });
-
-    const saved = await item.save();
-    res.status(201).json(saved);
+    const items = await Item.find().sort({ createdAt: -1 });
+    res.json({ items, total: items.length });
   } catch (err) {
-    console.log(err);
-    res.status(400).json({ message: err.message });
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// UPDATE item
+router.put("/:id", upload.single("image"), async (req, res) => {
+  try {
+    const item = await Item.findById(req.params.id);
+    if (!item) return res.status(404).json({ error: "Item not found" });
+
+    item.title = req.body.title || item.title;
+    item.description = req.body.description || item.description;
+    if (req.file) item.image = req.file.path;
+
+    await item.save();
+    res.json({ success: true, item });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// DELETE item
+router.delete("/:id", async (req, res) => {
+  try {
+    await Item.findByIdAndDelete(req.params.id);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
